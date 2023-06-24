@@ -152,7 +152,10 @@ defmodule LogicListener do
 end
 
 defmodule Sim do
-  alias String.Chars.Time
+  @moduledoc """
+  Simulate the logic function y(t + 1) = (x₁ ⊕ x₂) ⊕ y(t) where ⊕ is
+  the exclusive-or function.
+  """
   alias Sx.Simulator
   alias Sx.ModelServer
   def new() do
