@@ -139,7 +139,7 @@ defmodule Sx.ModelServer do
       )
       {:reply, {:error, :atomic}, state}
     else
-      r = Network.route(state.model, source, value)
+      r = Network.route(state.model, self(), source, value)
       {:reply, {:ok, r}, state}
     end
   end

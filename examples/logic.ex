@@ -60,18 +60,14 @@ defmodule N1 do
     %__MODULE__{n2: n2, m: m}
   end
 
-  def route(%{n2: n2, m: m}, source, value) do
-     # This is weird - we are assuming that route is always called by
-     # the model server for this model. Seems like a reasonable
-     # assumption, but using self() here feels very wrong. - maybe the
-     # pid should be passed in.
+  def route(%{n2: n2, m: m}, this, source, value) do
     cond do
-      source == self() ->
+      source == this ->
         # input to the network gets routed to n2
         [{n2, value}]
       source == n2 ->
         # output from n2 becomes input to m & output fron the network
-        [{self(), value}, {m, value}]
+        [{this, value}, {m, value}]
       source == m ->
         # output from m routes to n2
         [{n2, value}]
@@ -90,7 +86,7 @@ defimpl Sx.Network, for: N1 do
     List.flatten([m, Sx.ModelServer.all_atomics(n2)])
   end
 
-  def route(n, source, value), do: N1.route(n, source, value)
+  def route(n, this, source, value), do: N1.route(n, this, source, value)
 end
 
 defmodule N2 do
@@ -102,9 +98,9 @@ defmodule N2 do
 
   def new(o1, o2), do: %__MODULE__{o1: o1, o2: o2}
 
-  def route(%{o1: o1, o2: o2}, source, {tag, value}) do
+  def route(%{o1: o1, o2: o2}, this, source, {tag, value}) do
     cond do
-      source == self() ->
+      source == this ->
         if tag == :m do
           [{o2, {:x2, value}}]
         else
@@ -115,7 +111,7 @@ defmodule N2 do
         [{o2, {:x1, value}}]
       source == o2 ->
         # output from o2 routes to output from the network
-        [{self(), value}]
+        [{this, value}]
     end
   end
 end
@@ -131,7 +127,7 @@ defimpl Sx.Network, for: N2 do
     [m.o1, m.o2]
   end
 
-  def route(n, source, value), do: N2.route(n, source, value)
+  def route(n, this, source, value), do: N2.route(n, this, source, value)
 end
 
 defmodule LogicListener do
