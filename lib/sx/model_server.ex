@@ -1,13 +1,36 @@
 defmodule Sx.ModelServer do
   @moduledoc """
-  The model server manages the state of a single model.
+
+  This server manages the state, inputs, and outputs for a single
+  model. The model can be either a network or atomic; however, only
+  certain functions apply to each model type.
+
+  ## Atomic Models
+
+  Atomic models are the core of the simulation. They are the ultimate
+  destination of input and the source of all output. As the simulation
+  advances it calls `Sx.ModelServer.delta/1` to update the state of
+  every atomic model. Output from the models is cached in the server,
+  meaning that the actual `Sx.Atomic.output/1` function is only called
+  once per-timestep.
+
+  ## Network models
+
+  Network models provide a means for connecting atomic models. When
+  input arrives at a network it is routed through the network to the
+  appropriate atomic models using `Sx.ModelServer.route/3`. When the
+  children of a network (atomic or network models) produce output, it
+  is routed through the network's coupling function (implemented in
+  the `Sx.Network.route/3` protocol function) to transform it into
+  either input for other models within the network or output from the
+  network itself.
+
   """
 
   use GenServer
 
   require Logger
 
-  alias Sx.ModelServer
   alias Sx.Model
   alias Sx.Network
   alias Sx.Atomic
@@ -24,12 +47,29 @@ defmodule Sx.ModelServer do
   it is a network then every atomic model contained within it and its
   sub-networks it returned.
   """
+  @spec all_atomics(pid) :: [pid]
   def all_atomics(server), do: GenServer.call(server, :all_atomics)
 
+  @doc """
+  Add input to the model for the next step.
+  """
+  @spec add_input(pid, any) :: :ok
   def add_input(server, input), do: GenServer.cast(server, {:add_input, input})
 
+  @doc """
+  Compute the models next state with the input that was set using
+  `Sx.ModelServer.add_input/2`. This function is only applicable to
+  atomic models, as network models are advanced by individually
+  calling `ModelServer.delta/1` on all their atomic children.
+  """
+  @spec delta(pid) :: :ok
   def delta(server), do: GenServer.cast(server, :delta)
 
+  @doc """
+  Return the model's output bag. This function only applies to atomic
+  models.
+  """
+  @spec output(pid) :: [any]
   def output(server), do: GenServer.call(server, :output)
 
   @doc """
@@ -132,7 +172,7 @@ defmodule Sx.ModelServer do
   defp atomic_children(model) do
     Network.children(model)
     |> Enum.flat_map(fn m ->
-      case ModelServer.type(m) do
+      case type(m) do
         :atomic -> [m]
         :network -> all_atomics(m)
       end

@@ -4,15 +4,13 @@ defprotocol Sx.Network do
   """
 
   @doc """
-  Return all the atomic models within this network and any networks it
-  contains.
-  """
-  @spec all_atomics(network :: Sx.Network.t) :: [pid]
-  def all_atomics(network)
-
-  @doc """
   Route a value through the network, applying coupling functions and
   returning inputs to subordinate models.
+
+  The items in the returned list are tuples where the first element is
+  the pid of the model server where the value should be sent as input
+  (or output). To produce output from the network, the pid should be
+  equal to the the pid of the network's model server.
   """
   @spec route(t, pid, any) :: [{pid, any}]
   def route(network, source, value)
