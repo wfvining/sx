@@ -13,6 +13,6 @@ defprotocol Sx.Atomic do
   @doc """
   Compute the model output.
   """
-  @spec output(t) :: any
+  @spec output(t) :: {t, [any]}
   def output(model)
 end
