@@ -10,11 +10,13 @@ No good installation mechanism right now - just load the modules.
 
 There are a number of protocols that need to be implemented for each
 model, depending on its type (`Sx.Model`, `Sx.Network`, `Sx.Atomic`)
-then the top-level network can be passed to `Sx.Simulator.new/1` and
-run with `Sx.Simulator.run/1`.
+then the top-level network can be passed to `Sx.Simulator.start_link/1`
+and advanced through time with `Sx.Simulator.compute_next_state/2`.
 
 The logic-machine example from the book is implemented in
 `examples/logic.ex`
+
+A cellular automata example is implemented in `examples/ca.ex`.
 
 ```
 $ iex -S mix
