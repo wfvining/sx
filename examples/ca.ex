@@ -80,21 +80,23 @@ defmodule CAListener do
   @behaviour Sx.Listener
 
   def init(ncells) do
-    {:ok, %{ncells: ncells, states: []}}
+    f = File.open!("110.txt", [:write, :delayed_write, :utf8])
+    {:ok, %{ncells: ncells, states: [], file: f}}
   end
 
-  def terminate(_, _), do: :ok
+  def terminate(_, %{file: f}) do
+    :ok = File.close(f)
+  end
 
-  def output(_source, output, _time, %{states: s} = state) do
+  def output(_source, output, _time, %{states: s, file: f} = state) do
     s = [output|s]
     if length(s) == state.ncells do
-      s
+      IO.puts(f, s
       |> List.keysort(0)
       |> Enum.unzip
       |> elem(1)
       |> Enum.flat_map(fn x -> if x == 1, do: ['■', ' '], else: ['□', ' '] end)
-      |> List.to_charlist
-      |> IO.puts
+      |> List.to_charlist)
       {:ok, %{state | states: []}}
     else
       {:ok, %{state | states: s}}
@@ -114,13 +116,12 @@ defmodule CASimulator do
   def oneten([0, 0, 1]), do: 1
   def oneten([0, 0, 0]), do: 0
 
-  def new() do
-    {:ok, _} = Sx.Event.start_link()
+  def new(r) do
     {:ok, ca} = CA.new(
-      List.duplicate(0, 50) ++ [1] ++ List.duplicate(0, 50),
+      List.duplicate(0, r) ++ [1] ++ List.duplicate(0, r),
       &CASimulator.oneten/1)
     {:ok, sim} = Sx.Simulator.start_link(ca)
-    Sx.Simulator.add_listener(sim, CAListener, 100)
+    Sx.Simulator.add_listener(sim, CAListener, (r * 2) + 1)
     sim
   end
 

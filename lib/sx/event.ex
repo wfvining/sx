@@ -7,35 +7,40 @@ defmodule Sx.Event do
 
   use GenServer
 
-  def start_link(), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  def start_link(), do: GenServer.start_link(__MODULE__, nil)
 
   @doc """
   Notify the event manager that time has advanced.
   """
-  def tick(), do: GenServer.cast(__MODULE__, :tick)
+  def tick(event), do: GenServer.cast(event, :tick)
 
   @doc """
   Notify the event manager that a model has changed state.
   """
-  @spec state_change(any) :: :ok
-  def state_change(new_state) do
-    GenServer.cast(__MODULE__, {:state_change, self(), new_state})
+  @spec state_change(pid, any) :: :ok
+  def state_change(event, new_state) do
+    GenServer.cast(event, {:state_change, self(), new_state})
   end
 
   @doc """
   Notify the event manager that a model has produced output.
   """
-  def output(source, output) do
-    GenServer.cast(__MODULE__, {:output, source, output})
+  def output(event, source, output) do
+    GenServer.cast(event, {:output, source, output})
   end
 
   @doc """
   Add an event listener.
   """
-  @spec add_listener(module, any) :: :ok | {:error, reason :: any}
-  def add_listener(listener, initarg) do
-    GenServer.call(__MODULE__, {:add_listener, listener, initarg})
+  @spec add_listener(pid, module, any) :: :ok | {:error, reason :: any}
+  def add_listener(event, listener, initarg) do
+    GenServer.call(event, {:add_listener, listener, initarg})
   end
+
+  @doc """
+  Stop the event manager.
+  """
+  def stop(event), do: GenServer.cast(event, :stop)
 
   @impl true
   def init(nil), do: {:ok, %{listeners: [], time: 0}}
@@ -51,6 +56,10 @@ defmodule Sx.Event do
   def handle_cast({:output, source, output}, state) do
     listeners = notify_output(source, output, state.time, state.listeners)
     {:noreply, %{state | listeners: listeners}}
+  end
+
+  def handle_cast(:stop, state) do
+    {:stop, :normal, state}
   end
 
   defp notify_output(source, output, time, listeners) do
@@ -81,5 +90,12 @@ defmodule Sx.Event do
       {:error, _reason} = error ->
         {:reply, error, eventstate}
     end
+  end
+
+  @impl true
+  def terminate(:normal, state) do
+    Enum.each(
+      state.listeners,
+      fn {l, lstate} -> l.terminate(:normal, lstate) end)
   end
 end

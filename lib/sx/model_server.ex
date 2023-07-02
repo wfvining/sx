@@ -96,12 +96,20 @@ defmodule Sx.ModelServer do
     GenServer.call(server, {:route, source, value})
   end
 
+  @doc """
+  Set the event manager that should be notified when the model changes state.
+  """
+  @spec set_event_manager(pid, pid) :: :ok
+  def set_event_manager(server, event_manager) do
+    GenServer.cast(server, {:set_event_manager, event_manager})
+  end
+
   @impl true
   def init(model) do
     if Model.type(model) == :network do
       Enum.each(Network.children(model), &set_parent(&1, self()))
     end
-    {:ok, %{model: model, input: [], parent: nil}}
+    {:ok, %{model: model, input: [], parent: nil, event_manager: nil}}
   end
 
   @impl true
@@ -162,9 +170,13 @@ defmodule Sx.ModelServer do
       {:noreply, state}
     else
       new_model = Atomic.delta(state.model, state.input)
-      Sx.Event.state_change(new_model)
+      Sx.Event.state_change(state.event_manager, new_model)
       {:noreply, %{state | model: new_model, input: []}}
     end
+  end
+
+  def handle_cast({:set_event_manager, event_manager}, state) do
+    {:noreply, %{state | event_manager: event_manager}}
   end
 
   def handle_cast({:set_parent, parent}, state), do: {:noreply, %{state | parent: parent}}
