@@ -1,4 +1,4 @@
-defmodule Sx.Event do
+defmodule Sx.DiscreteTime.Event do
   @moduledoc """
   And event manager for simulation-related events.
   """

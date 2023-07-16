@@ -1,4 +1,4 @@
-defprotocol Sx.Atomic do
+defprotocol Sx.DiscreteTime.Atomic do
   @moduledoc """
   This protocol must be implemented by atomic models used with the
   simulator.

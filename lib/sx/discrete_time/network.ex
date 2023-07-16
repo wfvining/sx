@@ -1,4 +1,4 @@
-defprotocol Sx.Network do
+defprotocol Sx.DiscreteTime.Network do
   @moduledoc """
   This protocol must be implemented by every network model.
   """

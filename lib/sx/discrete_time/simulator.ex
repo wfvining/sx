@@ -1,22 +1,22 @@
-defmodule Sx.Simulator do
+defmodule Sx.DiscreteTime.Simulator do
   @moduledoc """
 
   This is the core of the simulation engine. It implements a bottom-up
   approach by directly operating on the atomic models contained within
   a network. The core functionality of the simulator is provided by
-  two functions. First, `Sx.Simulator.add_listener/3` adds an event
-  listener to capture state change and output events from the
-  simulation while it is running. Second,
-  `Sx.Simulator.compute_next_state/2` advances the simulation to the
-  next time step by first computing the output from all atomic and
-  network models, then routing input and invoking the
-  `Sx.ModelServer.delta/1` function on each atomic model.
+  two functions. First, `Sx.DiscreteTime.Simulator.add_listener/3`
+  adds an event listener to capture state change and output events
+  from the simulation while it is running. Second,
+  `Sx.DiscreteTime.Simulator.compute_next_state/2` advances the
+  simulation to the next time step by first computing the output from
+  all atomic and network models, then routing input and invoking the
+  `Sx.DiscreteTime.ModelServer.delta/1` function on each atomic model.
 
   """
 
   use GenServer
 
-  alias Sx.ModelServer
+  alias Sx.DiscreteTime.ModelServer
 
   @doc """
   Start a simulator for `model`.
@@ -58,7 +58,7 @@ defmodule Sx.Simulator do
 
   @impl true
   def handle_continue(:start_event, state) do
-    {:ok, event} = Sx.Event.start_link()
+    {:ok, event} = Sx.DiscreteTime.Event.start_link()
     Enum.each(state.atomics, &ModelServer.set_event_manager(&1, event))
     {:noreply, %{state | event_manager: event}}
   end
@@ -79,7 +79,7 @@ defmodule Sx.Simulator do
         end
       end)
     # tell the event manager that time has advanced
-    Sx.Event.tick(simulator.event_manager)
+    Sx.DiscreteTime.Event.tick(simulator.event_manager)
     # advance all the atomic models
     Enum.each(simulator.atomics, &ModelServer.delta/1)
     {:noreply, %{simulator | time: simulator.time + 1}}
@@ -91,7 +91,7 @@ defmodule Sx.Simulator do
 
   @impl true
   def handle_call({:add_listener, listener, initarg}, _from, state) do
-    {:reply, Sx.Event.add_listener(state.event_manager, listener, initarg), state}
+    {:reply, Sx.DiscreteTime.Event.add_listener(state.event_manager, listener, initarg), state}
   end
 
   defp compute_output(%{atomics: atomics} = simulator) do
@@ -108,12 +108,12 @@ defmodule Sx.Simulator do
 
   @impl true
   def terminate(:shutdown, state) do
-    Sx.Event.stop(state.event_manager)
+    Sx.DiscreteTime.Event.stop(state.event_manager)
   end
 
   defp route(parent, source, value, event_manager) do
     if parent != source do
-      Sx.Event.output(event_manager, source, value)
+      Sx.DiscreteTime.Event.output(event_manager, source, value)
     end
 
     if parent == nil do

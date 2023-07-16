@@ -15,11 +15,11 @@ defmodule Xor do
   def output(state), do: state.state
 end
 
-defimpl Sx.Model, for: Xor do
+defimpl Sx.DiscreteTime.Model, for: Xor do
   def type(_), do: :atomic
 end
 
-defimpl Sx.Atomic, for: Xor do
+defimpl Sx.DiscreteTime.Atomic, for: Xor do
   def delta(m, input), do: Xor.delta(m, input)
   def output(m), do: {m, [{:xor, Xor.output(m)}]}
 end
@@ -38,11 +38,11 @@ defmodule Memory do
   def output(%{s0: s0} = m), do: {m, [{:m, s0}]}
 end
 
-defimpl Sx.Model, for: Memory do
+defimpl Sx.DiscreteTime.Model, for: Memory do
   def type(_), do: :atomic
 end
 
-defimpl Sx.Atomic, for: Memory do
+defimpl Sx.DiscreteTime.Atomic, for: Memory do
   def delta(m, input), do: Memory.delta(m, input)
   def output(m), do: Memory.output(m)
 end
@@ -75,15 +75,15 @@ defmodule N1 do
   end
 end
 
-defimpl Sx.Model, for: N1 do
+defimpl Sx.DiscreteTime.Model, for: N1 do
   def type(_), do: :network
 end
 
-defimpl Sx.Network, for: N1 do
+defimpl Sx.DiscreteTime.Network, for: N1 do
   def children(%{n2: n2, m: m}), do: [n2, m]
 
   def all_atomics(%{n2: n2, m: m}) do
-    List.flatten([m, Sx.ModelServer.all_atomics(n2)])
+    List.flatten([m, Sx.DiscreteTime.ModelServer.all_atomics(n2)])
   end
 
   def route(n, this, source, value), do: N1.route(n, this, source, value)
@@ -116,11 +116,11 @@ defmodule N2 do
   end
 end
 
-defimpl Sx.Model, for: N2 do
+defimpl Sx.DiscreteTime.Model, for: N2 do
   def type(_), do: :network
 end
 
-defimpl Sx.Network, for: N2 do
+defimpl Sx.DiscreteTime.Network, for: N2 do
   def children(%{o1: o1, o2: o2}), do: [o1, o2]
 
   def all_atomics(m) do
@@ -131,7 +131,7 @@ defimpl Sx.Network, for: N2 do
 end
 
 defmodule LogicListener do
-  @behaviour Sx.Listener
+  @behaviour Sx.DiscreteTime.Listener
 
   def init(top), do: {:ok, top}
 
@@ -152,18 +152,18 @@ defmodule Sim do
   Simulate the logic function y(t + 1) = (x₁ ⊕ x₂) ⊕ y(t) where ⊕ is
   the exclusive-or function.
   """
-  alias Sx.Simulator
-  alias Sx.ModelServer
+  alias Sx.DiscreteTime.Simulator
+  alias Sx.DiscreteTime.ModelServer
   def new() do
-    {:ok, _} = Sx.Event.start_link()
+    {:ok, _} = Sx.DiscreteTime.Event.start_link()
     {:ok, o1} = ModelServer.start_link(Xor.new())
     {:ok, o2} = ModelServer.start_link(Xor.new())
     {:ok, m} = ModelServer.start_link(Memory.new())
     n2_model = N2.new(o1, o2)
     {:ok, n2} = ModelServer.start_link(n2_model)
     {:ok, n1} = ModelServer.start_link(N1.new(n2, m))
-    {:ok, sim} = Sx.Simulator.start_link(n1)
-    Sx.Simulator.add_listener(sim, LogicListener, n1)
+    {:ok, sim} = Sx.DiscreteTime.Simulator.start_link(n1)
+    Sx.DiscreteTime.Simulator.add_listener(sim, LogicListener, n1)
     sim
   end
 
@@ -204,7 +204,7 @@ defmodule Sim do
 
   defp run_cycle(_, _, 3), do: :ok
   defp run_cycle(sim, input, clock) do
-    Sx.Simulator.compute_next_state(sim, input)
+    Sx.DiscreteTime.Simulator.compute_next_state(sim, input)
     run_cycle(sim, input, clock+1)
   end
 end

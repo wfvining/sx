@@ -1,4 +1,4 @@
-defmodule Sx.Listener do
+defmodule Sx.DiscreteTime.Listener do
   @moduledoc """
   Simulation event listener.
   """

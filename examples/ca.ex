@@ -18,7 +18,7 @@ defmodule CA do
     n = length(states) - 1
     cells = for {s, i} <- Stream.zip(states, 0..n), do: Cell.new(s, i, rule)
     model = %CA{cells: cells |> :array.from_list |> :array.fix}
-    Sx.ModelServer.start_link(model)
+    Sx.DiscreteTime.ModelServer.start_link(model)
   end
 
   def children(%{cells: cells}) do
@@ -35,11 +35,11 @@ defmodule CA do
   end
 end
 
-defimpl Sx.Model, for: CA do
+defimpl Sx.DiscreteTime.Model, for: CA do
   def type(_), do: :network
 end
 
-defimpl Sx.Network, for: CA do
+defimpl Sx.DiscreteTime.Network, for: CA do
   def children(network), do: CA.children(network)
   def route(network, this, source, value), do: CA.route(network, this, source, value)
 end
@@ -51,7 +51,7 @@ defmodule Cell do
   defstruct [:state, :pos, :rule]
 
   def new(state, pos, rule) do
-    {:ok, pid} = Sx.ModelServer.start_link(%Cell{state: state, pos: pos, rule: rule})
+    {:ok, pid} = Sx.DiscreteTime.ModelServer.start_link(%Cell{state: state, pos: pos, rule: rule})
     pid
   end
 
@@ -67,17 +67,17 @@ defmodule Cell do
   def output(state), do: {state, [{state.pos, state.state}]}
 end
 
-defimpl Sx.Model, for: Cell do
+defimpl Sx.DiscreteTime.Model, for: Cell do
   def type(_), do: :atomic
 end
 
-defimpl Sx.Atomic, for: Cell do
+defimpl Sx.DiscreteTime.Atomic, for: Cell do
   def delta(model, input), do: Cell.delta(model, input)
   def output(model), do: Cell.output(model)
 end
 
 defmodule CAListener do
-  @behaviour Sx.Listener
+  @behaviour Sx.DiscreteTime.Listener
 
   def init(ncells) do
     f = File.open!("110.txt", [:write, :delayed_write, :utf8])
@@ -120,14 +120,14 @@ defmodule CASimulator do
     {:ok, ca} = CA.new(
       List.duplicate(0, r) ++ [1] ++ List.duplicate(0, r),
       &CASimulator.oneten/1)
-    {:ok, sim} = Sx.Simulator.start_link(ca)
-    Sx.Simulator.add_listener(sim, CAListener, (r * 2) + 1)
+    {:ok, sim} = Sx.DiscreteTime.Simulator.start_link(ca)
+    Sx.DiscreteTime.Simulator.add_listener(sim, CAListener, (r * 2) + 1)
     sim
   end
 
   def run(_, 0), do: :ok
   def run(sim, n) do
-    Sx.Simulator.compute_next_state(sim, [])
+    Sx.DiscreteTime.Simulator.compute_next_state(sim, [])
     run(sim, n - 1)
   end
 end

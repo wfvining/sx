@@ -1,4 +1,4 @@
-defprotocol Sx.Model do
+defprotocol Sx.DiscreteTime.Model do
   @moduledoc """
   This protocol must be implemented by every Network and Atomic model
   used with the simulation engine.

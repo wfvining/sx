@@ -1,4 +1,4 @@
-defmodule Sx.ModelServer do
+defmodule Sx.DiscreteTime.ModelServer do
   @moduledoc """
 
   This server manages the state, inputs, and outputs for a single
@@ -9,21 +9,22 @@ defmodule Sx.ModelServer do
 
   Atomic models are the core of the simulation. They are the ultimate
   destination of input and the source of all output. As the simulation
-  advances it calls `Sx.ModelServer.delta/1` to update the state of
-  every atomic model. Output from the models is cached in the server,
-  meaning that the actual `Sx.Atomic.output/1` function is only called
-  once per-timestep.
+  advances it calls `Sx.DiscreteTime.ModelServer.delta/1` to update
+  the state of every atomic model. Output from the models is cached in
+  the server, meaning that the actual
+  `Sx.DiscreteTime.Atomic.output/1` function is only called once
+  per-timestep.
 
   ## Network models
 
   Network models provide a means for connecting atomic models. When
   input arrives at a network it is routed through the network to the
-  appropriate atomic models using `Sx.ModelServer.route/3`. When the
-  children of a network (atomic or network models) produce output, it
-  is routed through the network's coupling function (implemented in
-  the `Sx.Network.route/3` protocol function) to transform it into
-  either input for other models within the network or output from the
-  network itself.
+  appropriate atomic models using `Sx.DiscreteTime.ModelServer.route/3`.
+  When the children of a network (atomic or network models) produce
+  output, it is routed through the network's coupling function
+  (implemented in the `Sx.DiscreteTime.Network.route/3` protocol
+  function) to transform it into either input for other models within
+  the network or output from the network itself.
 
   """
 
@@ -31,9 +32,9 @@ defmodule Sx.ModelServer do
 
   require Logger
 
-  alias Sx.Model
-  alias Sx.Network
-  alias Sx.Atomic
+  alias Sx.DiscreteTime.Model
+  alias Sx.DiscreteTime.Network
+  alias Sx.DiscreteTime.Atomic
 
   def start_link(model) do
     GenServer.start_link(__MODULE__, model, [])
@@ -58,7 +59,7 @@ defmodule Sx.ModelServer do
 
   @doc """
   Compute the models next state with the input that was set using
-  `Sx.ModelServer.add_input/2`. This function is only applicable to
+  `Sx.DiscreteTime.ModelServer.add_input/2`. This function is only applicable to
   atomic models, as network models are advanced by individually
   calling `ModelServer.delta/1` on all their atomic children.
   """
@@ -170,7 +171,7 @@ defmodule Sx.ModelServer do
       {:noreply, state}
     else
       new_model = Atomic.delta(state.model, state.input)
-      Sx.Event.state_change(state.event_manager, new_model)
+      Sx.DiscreteTime.Event.state_change(state.event_manager, new_model)
       {:noreply, %{state | model: new_model, input: []}}
     end
   end
