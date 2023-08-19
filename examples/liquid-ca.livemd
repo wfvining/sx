@@ -1,0 +1,440 @@
+# Liquid Cellular Automata
+
+```elixir
+Mix.install(
+  [
+    {:sx, git: "https://github.com/wfvining/sx.git", branch: "master"},
+    {:rangetree, git: "https://github.com/wfvining/rangetree.git", branch: "master"},
+    {:vega_lite, "~> 0.1.6"},
+    {:kino_vega_lite, "~> 0.1.7"}
+  ],
+  consolidate_protocols: false
+)
+```
+
+## LCA Simulation Architecture
+
+The overall simulation architecture is shown in the figure below. It consists of a single network containing three kinds of atomic models.
+
+![](images/lca-sim-networks%284%29.png)
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Agents
+
+The agents are atomic models with state specified by the tuple $(\vec{v}, s)$ where $\vec{v}$ is the agent's velocity and $s \in \{1, 0\}$ is the cell-state of the agent. In the simulation there are $N$ cells embeded in a two dimensional space via a network model. The output produced by each agent is its current velocity and its current cell-state. The velocity is routed by the network to the space model while the state is routed to the communication overlay model.
+
+### Space
+
+The space itself is an atomic model that tracks the positions of the agents and can influence their velocity by sending velocity changes to the agents (e.g. change in velocity after colliding with a wall). The output from the space model is the positions of the agents. These positions are routed to the overlay model.
+
+### Communication Overlay
+
+The communication overlay collects the positions and states of the agents and produces as output the neighborhood of each agent (i.e. states visible to that agent within the communication network). The output is routed to each individual agent model.
+
+## Implementation
+
+<!-- livebook:{"branch_parent_index":1} -->
+
+## Agent
+
+```elixir
+defmodule LCAAgent do
+  defstruct [:state, :velocity, tick: 0]
+  require Logger
+
+  def new(state, velocity) do
+    %LCAAgent{state: state, velocity: velocity}
+  end
+
+  def update_velocity(agent, input) do
+    case List.keyfind(input, :deltav, 0) do
+      nil ->
+        agent
+
+      {_, deltav} ->
+        %{agent | velocity: Enum.zip_with(agent.velocity, deltav, fn x, y -> x + y end)}
+    end
+  end
+
+  def update_state(agent, input) do
+    case List.keyfind(input, :neighborhood, 0, {:neighborhood, []}) do
+      {_, []} ->
+        agent
+
+      {_, neighbors} ->
+        s = majority([agent.state | neighbors])
+
+        if s == agent.state do
+          %{agent | state: s}
+        else
+          %{agent | state: s, velocity: for(x <- agent.velocity, do: -1 * x)}
+        end
+    end
+  end
+
+  defp majority(states) do
+    mean = Enum.sum(states) / length(states)
+
+    if mean == 0.5 do
+      hd(states)
+    else
+      round(mean)
+    end
+  end
+
+  defimpl Sx.DiscreteTime.Model do
+    def type(_), do: :atomic
+  end
+
+  defimpl Sx.DiscreteTime.Atomic do
+    def output(%{tick: t} = agent) when rem(t, 2) == 1 do
+      # must wait one tick for the delta v to get back to us before attempting to move again
+      # without this we'd send the same velocity as the previous tick because at the same
+      # time we are sending we are also receiving the deltav
+      {%{agent | tick: t + 1}, [state: agent.state, velocity: [0, 0]]}
+    end
+
+    def output(agent) do
+      {%{agent | tick: agent.tick + 1}, [state: agent.state, velocity: agent.velocity]}
+    end
+
+    def delta(agent, input) do
+      agent |> LCAAgent.update_velocity(input) |> LCAAgent.update_state(input)
+    end
+  end
+end
+```
+
+<!-- livebook:{"branch_parent_index":1} -->
+
+## Space
+
+```elixir
+defmodule Space do
+  defstruct [:width, :height, :agent_positions, :deltav]
+  require Logger
+
+  def new(width, height, agents) do
+    %Space{
+      width: width,
+      height: height,
+      agent_positions: random_positions(agents, width, height),
+      deltav: []
+    }
+  end
+
+  defp random_positions(agents, width, height) do
+    for a <- agents do
+      {a, [:rand.uniform_real() * width, :rand.uniform_real() * height]}
+    end
+    |> Map.new()
+  end
+
+  defp reflect(x, y, vx, vy, space) do
+    if in_bounds(x, y, space) do
+      {[x, y], [vx, vy]}
+    else
+      {x, vx} = reflect(x, vx, space.width)
+      {y, vy} = reflect(y, vy, space.height)
+      reflect(x, y, vx, vy, space)
+    end
+  end
+
+  defp reflect(x, vx, size) do
+    cond do
+      x > size ->
+        {size - (x - size), -vx}
+
+      x < 0 ->
+        {abs(x), -vx}
+
+      true ->
+        {x, vx}
+    end
+  end
+
+  defp in_bounds(x, y, space) do
+    x <= space.width and x >= 0 and y <= space.height and y >= 0
+  end
+
+  def move([x, y], [vx, vy], space) do
+    newx = x + vx
+    newy = y + vy
+    {p, [newvx, newvy]} = reflect(newx, newy, vx, vy, space)
+    {p, [newvx - vx, newvy - vy]}
+  end
+
+  defimpl Sx.DiscreteTime.Model do
+    def type(_), do: :atomic
+  end
+
+  defimpl Sx.DiscreteTime.Atomic do
+    def output(space) do
+      {space,
+       for(p <- Map.to_list(space.agent_positions), do: {:pos, p}) ++
+         for(dv <- space.deltav, do: {:deltav, dv})}
+    end
+
+    def delta(space, input) do
+      changes =
+        for {agent, velocity} <- input do
+          p = Map.fetch!(space.agent_positions, agent)
+
+          {new_position, deltav} = Space.move(p, velocity, space)
+
+          {{agent, deltav}, {agent, new_position}}
+        end
+
+      {deltav, positions} = Enum.unzip(changes)
+
+      %{space | agent_positions: Map.new(positions), deltav: deltav}
+    end
+  end
+end
+```
+
+<!-- livebook:{"branch_parent_index":1} -->
+
+## Communication Overlay
+
+```elixir
+defmodule CommOverlay do
+  defstruct [:r, states: [], positions: []]
+
+  def new(radius), do: %CommOverlay{r: radius}
+
+  defimpl Sx.DiscreteTime.Model do
+    def type(_), do: :atomic
+  end
+
+  defimpl Sx.DiscreteTime.Atomic do
+    def output(comm) do
+      t = :rangetree.new(for {_, p} <- comm.positions, do: p)
+
+      positions =
+        Map.new(Enum.zip(1..length(comm.positions), for({_, p} <- comm.positions, do: p)))
+
+      states = Map.new(Enum.zip(1..length(comm.states), for({_, s} <- comm.states, do: s)))
+
+      {comm,
+       for {agent, p} <- comm.positions do
+         distance = fn x ->
+           x
+           |> Enum.zip_with(p, fn x, y -> (x - y) ** 2 end)
+           |> Enum.sum()
+           |> :math.sqrt()
+         end
+
+         {agent,
+          :rangetree.query(
+            for(x <- p, do: x - comm.r),
+            for(x <- p, do: x + comm.r),
+            t
+          )
+          |> Enum.filter(fn i -> distance.(Map.get(positions, i)) <= comm.r end)
+          |> Enum.map(&Map.get(states, &1))}
+       end}
+    end
+
+    def delta(comm, input) do
+      positions = List.keysort(for({:pos, x} <- input, do: x), 0)
+      states = List.keysort(for({:state, x} <- input, do: x), 0)
+      %{comm | positions: positions, states: states}
+    end
+  end
+end
+```
+
+<!-- livebook:{"branch_parent_index":1} -->
+
+## LCA Network
+
+```elixir
+defmodule LCANetwork do
+  defstruct [:agents, :space, :overlay]
+  require Logger
+
+  def new(agents, space, overlay) do
+    %LCANetwork{agents: agents, space: space, overlay: overlay}
+  end
+
+  defimpl Sx.DiscreteTime.Model do
+    def type(_), do: :network
+  end
+
+  defimpl Sx.DiscreteTime.Network do
+    def children(network) do
+      [network.overlay, network.space | network.agents]
+    end
+
+    def route(network, _this, _source, {:pos, _} = value) do
+      [{network.overlay, value}]
+    end
+
+    def route(network, _this, source, {:state, state}) do
+      [{network.overlay, {:state, {source, state}}}]
+    end
+
+    def route(network, _this, source, {:velocity, v}) do
+      [{network.space, {source, v}}]
+    end
+
+    def route(_network, _this, _source, {:deltav, {agent, dv}}) do
+      [{agent, {:deltav, dv}}]
+    end
+
+    def route(network, _this, source, {agent, n}) when source == network.overlay do
+      [{agent, {:neighborhood, n}}]
+    end
+  end
+end
+```
+
+<!-- livebook:{"branch_parent_index":1} -->
+
+## Listener
+
+```elixir
+defmodule LCAListener do
+  @behaviour Sx.DiscreteTime.Listener
+
+  defstruct [:pid, history: [], time: 0, positions: %{}, states: %{}]
+
+  @impl true
+  def init(pid) do
+    {:ok, %LCAListener{pid: pid}}
+  end
+
+  @impl true
+  def output(
+        _source,
+        {:pos, {agent, pos}},
+        _time,
+        %{positions: positions} = listener_state
+      ) do
+    {:ok, %{listener_state | positions: Map.put(positions, agent, pos)}}
+  end
+
+  def output(
+        source,
+        {:state, state},
+        _time,
+        %{states: states} = listener_state
+      ) do
+    {:ok, %{listener_state | states: Map.put(states, source, state)}}
+  end
+
+  def output(_, _, _, listener_state), do: {:ok, listener_state}
+
+  @impl true
+  def state_change(_model, _model_state, time, listener_state) do
+    if time != listener_state.time do
+      s = save_history(listener_state)
+      send(listener_state.pid, {:step, listener_state.time, hd(s.history)})
+      {:ok, s}
+    else
+      {:ok, listener_state}
+    end
+  end
+
+  @impl true
+  def terminate(_reason, _state), do: :ok
+
+  defp save_history(%{history: hist, positions: pos, states: states, time: t, pid: p}) do
+    data =
+      for agent <- Map.keys(pos) do
+        [x, y] = Map.get(pos, agent)
+        state = Map.get(states, agent)
+        %{"x" => x, "y" => y, "state" => state, "time" => t}
+      end
+
+    %LCAListener{history: [data | hist], time: t + 1, pid: p}
+  end
+end
+```
+
+## Simulation
+
+```elixir
+agents =
+  for _ <- 1..500 do
+    vx = 1 - :rand.uniform() * 2
+    vy = 1 - :rand.uniform() * 2
+    l = :math.sqrt(vx * vx + vy * vy) / 0.1
+
+    LCAAgent.new(:rand.uniform(2) - 1, [vx / l, vy / l])
+    |> Sx.DiscreteTime.ModelServer.start_link()
+    |> elem(1)
+  end
+```
+
+```elixir
+space =
+  Space.new(10, 10, agents)
+  |> Sx.DiscreteTime.ModelServer.start_link()
+  |> elem(1)
+```
+
+```elixir
+comm =
+  CommOverlay.new(0.5)
+  |> Sx.DiscreteTime.ModelServer.start_link()
+  |> elem(1)
+```
+
+```elixir
+{:ok, net} = LCANetwork.new(agents, space, comm) |> Sx.DiscreteTime.ModelServer.start_link()
+```
+
+```elixir
+{:ok, lca} = Sx.DiscreteTime.Simulator.start_link(net)
+```
+
+```elixir
+Sx.DiscreteTime.Simulator.add_listener(lca, LCAListener, self())
+```
+
+```elixir
+Logger.level()
+```
+
+```elixir
+for _ <- 0..2000 do
+  Sx.DiscreteTime.Simulator.compute_next_state(lca, [])
+end
+```
+
+```elixir
+ts =
+  for _ <- 0..2000 do
+    receive do
+      {:step, _, xs} -> xs
+    end
+  end
+```
+
+```elixir
+ts = List.flatten(ts)
+```
+
+```elixir
+alias VegaLite, as: Vl
+```
+
+```elixir
+Vl.new(width: 500, height: 500)
+|> Vl.data_from_values(ts)
+|> Vl.mark(:point)
+|> Vl.encode_field(:x, "x",
+  type: :quantitative,
+  axis: [tick_count: 0, grid: false, domain: [0, 20]]
+)
+|> Vl.encode_field(:y, "y",
+  type: :quantitative,
+  axis: [tick_count: 0, grid: false, domain: [0, 10]]
+)
+|> Vl.encode_field(:color, "state", type: :nominal, scale: [domain: [0, 1]])
+|> Vl.param("time", value: 0, bind: [input: "range", min: 0, max: 2000])
+|> Vl.transform(filter: "datum.time == time")
+```
